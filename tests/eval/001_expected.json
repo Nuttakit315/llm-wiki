@@ -1,0 +1,17 @@
+{
+  "benchmark_id": "001_pkm_architecture",
+  "expected_concepts": ["Persistent Knowledge Base", "The Wiki Layer", "Deterministic Linter"],
+  "expected_tags": ["knowledge-management", "ai", "architecture"],
+  "retrieval_queries": [
+    {
+      "query": "Persistent Knowledge",
+      "expected_match": "001_source",
+      "minimum_rank": 3
+    },
+    {
+      "query": "ความจำระยะยาว",
+      "expected_match": "001_source",
+      "minimum_rank": 5
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+name: LLM Wiki Production Pipeline (Hardened CI/CD & Automated Linter)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'raw/**'
+      - 'wiki/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+      - 'requirements.txt'
+  workflow_dispatch:
+
+concurrency:
+  group: llm-wiki-pipeline-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  production-knowledge-pipeline:
+    name: Knowledge Compilation & Verification
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository (Pinned v4.2.2)
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11 (Pinned v5.4.0)
+        uses: actions/setup-python@v5.4.0
+        with:
+          python-version: '3.11'
+
+      - name: Install Hardened Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Phase 1 - Run Automated Test Suite (Pytest)
+        run: |
+          pytest tests/ -v
+
+      - name: Phase 2 - Smart Ingestion & Provenance Extraction
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+        run: |
+          python scripts/wiki_ingest.py
+
+      - name: Phase 3 - Graph & Hybrid Search Indexing
+        run: |
+          python scripts/run_graphify.py
+
+      - name: Phase 4 - Deterministic Linter & Auto-Repair
+        run: |
+          python scripts/lint_wiki.py --repair --strict
+
+      - name: Phase 5 - Security Boundary Check & Scoped Commit
+        run: |
+          git config --global user.name "Wiki Engine Bot"
+          git config --global user.email "bot@wikiengine.local"
+          
+          # Stage only strictly allowed knowledge paths
+          git add wiki/ graph/ index.md log.md
+          
+          # Security Audit: Verify no unauthorized paths are staged
+          STAGED_UNAUTHORIZED=$(git diff --name-only --cached | grep -E '^(\.github/|scripts/|tests/|\.env)' || true)
+          if [ -n "$STAGED_UNAUTHORIZED" ]; then
+            echo "❌ CRITICAL SECURITY ERROR: Unauthorized file modification detected in staged changes:"
+            echo "$STAGED_UNAUTHORIZED"
+            exit 1
+          fi
+
+          git status
+          git diff-index --quiet HEAD || git commit -m "auto: compile LLM Wiki pages, lint, and update search index [skip ci]"
+          git push
